@@ -39,6 +39,7 @@ def quaternion2euler(q0, q1, q2, q3):
     Returns:
         tuple: euler angles in radians (roll, pitch, yaw)
     """
+
     roll = math.atan2(2*(q0*q1 + q2*q3), 1 - 2*(q1*q1 + q2*q2))
     pitch = math.asin(2*(q0*q2 - q3*q1))
     yaw = math.atan2(2*(q0*q3 + q1*q2), 1 - 2*(q2*q2 + q3*q3))
@@ -46,6 +47,18 @@ def quaternion2euler(q0, q1, q2, q3):
 
 
 def create_plots(log_file, message_name, parameters, file_name=None):
+    """
+
+    Args:
+        log_file:
+        message_name:
+        parameters:
+        file_name:
+
+    Returns:
+
+    """
+
     if isinstance(log_file, pyulog.ULog):
         ulog = log_file
     elif isinstance(log_file, str):
@@ -69,6 +82,15 @@ def create_plots(log_file, message_name, parameters, file_name=None):
 
 
 def print_initial_parameters(log_file):
+    """
+
+    Args:
+        log_file:
+
+    Returns:
+
+    """
+
     if isinstance(log_file, pyulog.ULog):
         ulog = log_file
     elif isinstance(log_file, str):
@@ -82,6 +104,15 @@ def print_initial_parameters(log_file):
 
 
 def print_changed_parameters(log_file):
+    """
+
+    Args:
+        log_file:
+
+    Returns:
+
+    """
+
     if isinstance(log_file, pyulog.ULog):
         ulog = log_file
     elif isinstance(log_file, str):
@@ -95,6 +126,15 @@ def print_changed_parameters(log_file):
 
 
 def print_message_formats(log_file):
+    """
+
+    Args:
+        log_file:
+
+    Returns:
+
+    """
+
     if isinstance(log_file, pyulog.ULog):
         ulog = log_file
     elif isinstance(log_file, str):
@@ -110,6 +150,15 @@ def print_message_formats(log_file):
 
 
 def print_logged_messages(log_file):
+    """
+
+    Args:
+        log_file:
+
+    Returns:
+
+    """
+
     if isinstance(log_file, pyulog.ULog):
         ulog = log_file
     elif isinstance(log_file, str):
@@ -123,6 +172,15 @@ def print_logged_messages(log_file):
 
 
 def print_dropouts(log_file):
+    """
+
+    Args:
+        log_file:
+
+    Returns:
+
+    """
+
     if isinstance(log_file, pyulog.ULog):
         ulog = log_file
     elif isinstance(log_file, str):
@@ -136,6 +194,15 @@ def print_dropouts(log_file):
 
 
 def print_available_parameters(log_file):
+    """
+
+    Args:
+        log_file:
+
+    Returns:
+
+    """
+
     if isinstance(log_file, pyulog.ULog):
         ulog = log_file
     elif isinstance(log_file, str):
@@ -185,16 +252,32 @@ def main(ulog_file):
     fig.savefig(f"vehicle_attitude.pdf", dpi=None, facecolor='w', edgecolor='w', orientation='portrait', papertype='a4',
                 format='pdf', transparent=False, bbox_inches=None, pad_inches=0.1, frameon=None, metadata=None)
 
-    # LATERAL AXE
+    # VERTICAL AXIS
     actuator_outputs = log_file.get_dataset('actuator_outputs')
     time_data_outputs = actuator_outputs.data['timestamp']
     # motors 2 & 3
     left_motors = (actuator_outputs.data['output[1]'] + actuator_outputs.data['output[2]']) / 2
     # motors 1 & 4
     right_motors = (actuator_outputs.data['output[0]'] + actuator_outputs.data['output[3]']) / 2
-
     thrust = (actuator_outputs.data['output[1]'] + actuator_outputs.data['output[2]'] + actuator_outputs.data['output[0]'] + actuator_outputs.data['output[3]']) / 4
+    fig, axs = plt.subplots(2, 1, sharex='all')
+    axs[0].set_title('Vertical axis')
+    axs[0].plot(time_data_outputs, thrust, drawstyle='steps-post')
+    axs[0].set_ylabel('Thrust')
+    axs[0].grid(True)
+    vehicle_global_position = log_file.get_dataset('vehicle_global_position')
+    time_global_position = vehicle_global_position.data['timestamp']
+    alt = vehicle_global_position.data['alt']
+    axs[1].plot(time_global_position, alt, drawstyle='steps-post')
+    axs[1].set_ylabel('Altitude')
+    axs[1].grid(True)
+    fig.tight_layout()
+    fig.savefig(f"vertical_axis.pdf", dpi=None, facecolor='w', edgecolor='w', orientation='portrait', papertype='a4',
+                format='pdf', transparent=False, bbox_inches=None, pad_inches=0.1, frameon=None, metadata=None)
+
+    # LATERAL AXIS
     fig, axs = plt.subplots(4, 1, sharex='all')
+    axs[0].set_title('Lateral axis')
     axs[0].plot(time_data, roll * __rad2deg__, drawstyle='steps-post')
     axs[0].set_ylabel('Roll')
     axs[0].grid(True)
@@ -207,7 +290,7 @@ def main(ulog_file):
     axs[3].plot(time_data_outputs, left_motors - right_motors, drawstyle='steps-post')
     axs[3].grid(True)
     fig.tight_layout()
-    fig.savefig(f"axe_lateral.pdf", dpi=None, facecolor='w', edgecolor='w', orientation='portrait', papertype='a4',
+    fig.savefig(f"lateral_axis.pdf", dpi=None, facecolor='w', edgecolor='w', orientation='portrait', papertype='a4',
                 format='pdf', transparent=False, bbox_inches=None, pad_inches=0.1, frameon=None, metadata=None)
 
 
