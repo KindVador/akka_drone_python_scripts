@@ -46,252 +46,157 @@ def quaternion2euler(q0, q1, q2, q3):
     return roll, pitch, yaw
 
 
-def create_plots(log_file, message_name, parameters, file_name=None):
-    """
-
-    Args:
-        log_file:
-        message_name:
-        parameters:
-        file_name:
-
-    Returns:
-
-    """
-
-    if isinstance(log_file, pyulog.ULog):
-        ulog = log_file
-    elif isinstance(log_file, str):
-        if os.path.isfile(log_file):
-            ulog = pyulog.ULog(log_file)
-        else:
-            raise FileNotFoundError(log_file)
-
-    msg = ulog.get_dataset(message_name)
-    time_data = msg.data['timestamp']
-    fig, axs = plt.subplots(len(parameters), 1, sharex='all')
-    for i in range(len(parameters)):
-        axs[i].plot(time_data, msg.data[parameters[i]], drawstyle='steps-post')
-        axs[i].set_ylabel(parameters[i])
-        axs[i].grid(True)
-    fig.tight_layout()
-    if file_name is None:
-        file_name = message_name
-    fig.savefig(f"{file_name}.pdf", dpi=None, facecolor='w', edgecolor='w', orientation='portrait', papertype='a4',
-                format='pdf', transparent=False, bbox_inches=None, pad_inches=0.1, frameon=None, metadata=None)
+# create a vectorize function
+vquaternion2euler = np.vectorize(quaternion2euler, otypes=[np.float, np.float, np.float])
 
 
-def print_initial_parameters(log_file):
-    """
+class PX4LogFile(pyulog.ULog):
 
-    Args:
-        log_file:
+    def __init__(self, ulog_file=None):
+        super(PX4LogFile, self).__init__(ulog_file)
+        self.data = {}
+        self.compute_additional_parameters()
 
-    Returns:
+    def compute_additional_parameters(self):
+        # compute euler angles from quaternion
+        va = self.get_dataset('vehicle_attitude')
+        time_data = va.data['timestamp']
+        roll, pitch, yaw = vquaternion2euler(va.data['q[0]'], va.data['q[1]'], va.data['q[2]'], va.data['q[3]'])
+        # add time data to each angle and add to parameters list
+        self.data['roll'] = np.stack([time_data, roll], axis=1)
+        self.data['pitch'] = np.stack([time_data, pitch], axis=1)
+        self.data['yaw'] = np.stack([time_data, yaw], axis=1)
 
-    """
+        ao = self.get_dataset('actuator_outputs')
+        # motors 2 & 3
+        left_motors = (ao.data['output[1]'] + ao.data['output[2]']) / 2
+        self.data['left_motors'] = np.stack([ao.data['timestamp'], left_motors], axis=1)
+        # motors 1 & 4
+        right_motors = (ao.data['output[0]'] + ao.data['output[3]']) / 2
+        self.data['right_motors'] = np.stack([ao.data['timestamp'], right_motors], axis=1)
+        thrust = (left_motors + right_motors) / 4
+        self.data['thrust'] = np.stack([ao.data['timestamp'], thrust], axis=1)
 
-    if isinstance(log_file, pyulog.ULog):
-        ulog = log_file
-    elif isinstance(log_file, str):
-        if os.path.isfile(log_file):
-            ulog = pyulog.ULog(log_file)
-        else:
-            raise FileNotFoundError(log_file)
+        # compute lift force
+        # lift = thrust * np.cos(vroll) * np.cos(vpitch)
 
-    for k, v in ulog.initial_parameters.items():
-        print(k, v)
+    def create_plots(self, message_name, parameters, file_name=None):
 
+        msg = self.get_dataset(message_name)
+        time_data = msg.data['timestamp']
+        fig, axs = plt.subplots(len(parameters), 1, sharex='all')
+        for i in range(len(parameters)):
+            axs[i].plot(time_data, msg.data[parameters[i]], drawstyle='steps-post')
+            axs[i].set_ylabel(parameters[i])
+            axs[i].grid(True)
+        fig.tight_layout()
+        if file_name is None:
+            file_name = message_name
+        fig.savefig(f"{file_name}.pdf", dpi=None, facecolor='w', edgecolor='w', orientation='portrait', papertype='a4',
+                    format='pdf', transparent=False, bbox_inches=None, pad_inches=0.1, frameon=None, metadata=None)
 
-def print_changed_parameters(log_file):
-    """
+    def print_initial_parameters(self):
 
-    Args:
-        log_file:
+        for k, v in self.initial_parameters.items():
+            print(k, v)
 
-    Returns:
+    def print_changed_parameters(self):
 
-    """
+        for cp in self.changed_parameters:
+            print(cp)
 
-    if isinstance(log_file, pyulog.ULog):
-        ulog = log_file
-    elif isinstance(log_file, str):
-        if os.path.isfile(log_file):
-            ulog = pyulog.ULog(log_file)
-        else:
-            raise FileNotFoundError(log_file)
+    def print_message_formats(self):
 
-    for cp in ulog.changed_parameters:
-        print(cp)
+        for k, v in self.message_formats.items():
+            print("{} ({}):".format(v.name, dir(v)))
+            for f in v.fields:
+                print("\t\t{}".format(f))
 
+    def print_logged_messages(self):
 
-def print_message_formats(log_file):
-    """
+        for lm in self.logged_messages:
+            print(lm)
 
-    Args:
-        log_file:
+    def print_dropouts(self):
 
-    Returns:
+        for d in self.dropouts:
+            print(d)
 
-    """
+    def print_available_parameters(self):
 
-    if isinstance(log_file, pyulog.ULog):
-        ulog = log_file
-    elif isinstance(log_file, str):
-        if os.path.isfile(log_file):
-            ulog = pyulog.ULog(log_file)
-        else:
-            raise FileNotFoundError(log_file)
+        for msg in self.data_list:
+            for k, v in msg.data.items():
+                print('{}.{}'.format(msg.name, k))
 
-    for k, v in ulog.message_formats.items():
-        print("{} ({}):".format(v.name, dir(v)))
-        for f in v.fields:
-            print("\t\t{}".format(f))
+    def create_lateral_plots(self):
+        fig, axs = plt.subplots(4, 1, sharex='all')
+        axs[0].set_title('Lateral axis')
+        axs[0].plot(self.data['roll'][:, 0], self.data['roll'][:, 1] * __rad2deg__, drawstyle='steps-post')
+        axs[0].set_ylabel('Roll')
+        axs[0].grid(True)
+        axs[1].plot(self.data['left_motors'][:, 0], self.data['left_motors'][:, 1], drawstyle='steps-post')
+        axs[1].set_ylabel('Left motors')
+        axs[1].grid(True)
+        axs[2].plot(self.data['right_motors'][:, 0], self.data['right_motors'][:, 1], drawstyle='steps-post')
+        axs[2].set_ylabel('Right motors')
+        axs[2].grid(True)
+        axs[3].plot(self.data['right_motors'][:, 0], self.data['left_motors'][:, 1] - self.data['right_motors'][:, 1], drawstyle='steps-post')
+        axs[3].grid(True)
+        fig.tight_layout()
+        fig.savefig(f"lateral_axis.pdf", dpi=None, facecolor='w', edgecolor='w', orientation='portrait', papertype='a4',
+                    format='pdf', transparent=False, bbox_inches=None, pad_inches=0.1, frameon=None, metadata=None)
 
+    def create_attitude_plots(self):
+        fig, axs = plt.subplots(3, 1, sharex='all')
+        axs[0].set_title('vehicle_attitude')
+        axs[0].plot(self.data['roll'][:, 0], self.data['roll'][:, 1] * __rad2deg__, drawstyle='steps-post')
+        axs[0].set_ylabel('Roll')
+        axs[0].grid(True)
+        axs[1].plot(self.data['pitch'][:, 0], self.data['pitch'][:, 1] * __rad2deg__, drawstyle='steps-post')
+        axs[1].set_ylabel('Pitch')
+        axs[1].grid(True)
+        axs[2].plot(self.data['yaw'][:, 0], self.data['yaw'][:, 1] * __rad2deg__, drawstyle='steps-post')
+        axs[2].set_ylabel('Yaw')
+        axs[2].grid(True)
+        fig.tight_layout()
+        fig.savefig(f"vehicle_attitude.pdf", dpi=None, facecolor='w', edgecolor='w', orientation='portrait',
+                    papertype='a4',
+                    format='pdf', transparent=False, bbox_inches=None, pad_inches=0.1, frameon=None, metadata=None)
 
-def print_logged_messages(log_file):
-    """
-
-    Args:
-        log_file:
-
-    Returns:
-
-    """
-
-    if isinstance(log_file, pyulog.ULog):
-        ulog = log_file
-    elif isinstance(log_file, str):
-        if os.path.isfile(log_file):
-            ulog = pyulog.ULog(log_file)
-        else:
-            raise FileNotFoundError(log_file)
-
-    for lm in ulog.logged_messages:
-        print(lm)
-
-
-def print_dropouts(log_file):
-    """
-
-    Args:
-        log_file:
-
-    Returns:
-
-    """
-
-    if isinstance(log_file, pyulog.ULog):
-        ulog = log_file
-    elif isinstance(log_file, str):
-        if os.path.isfile(log_file):
-            ulog = pyulog.ULog(log_file)
-        else:
-            raise FileNotFoundError(log_file)
-
-    for d in ulog.dropouts:
-        print(d)
-
-
-def print_available_parameters(log_file):
-    """
-
-    Args:
-        log_file:
-
-    Returns:
-
-    """
-
-    if isinstance(log_file, pyulog.ULog):
-        ulog = log_file
-    elif isinstance(log_file, str):
-        if os.path.isfile(log_file):
-            ulog = pyulog.ULog(log_file)
-        else:
-            raise FileNotFoundError(log_file)
-
-    for msg in ulog.data_list:
-        for k, v in msg.data.items():
-            print('{}.{}'.format(msg.name, k))
+    def create_vertical_plots(self):
+        fig, axs = plt.subplots(2, 1, sharex='all')
+        axs[0].set_title('Vertical axis')
+        axs[0].plot(self.data['thrust'][:, 0], self.data['thrust'][:, 1], drawstyle='steps-post')
+        # axs[0].plot(time_data_outputs, lift, drawstyle='steps-post')
+        axs[0].set_ylabel('Thrust & Lift')
+        axs[0].grid(True)
+        vgp = self.get_dataset('vehicle_global_position')
+        time_global_position = vgp.data['timestamp']
+        alt = vgp.data['alt']
+        axs[1].plot(time_global_position, alt, drawstyle='steps-post')
+        axs[1].set_ylabel('Altitude')
+        axs[1].grid(True)
+        fig.tight_layout()
+        fig.savefig(f"vertical_axis.pdf", dpi=None, facecolor='w', edgecolor='w', orientation='portrait',
+                    papertype='a4',
+                    format='pdf', transparent=False, bbox_inches=None, pad_inches=0.1, frameon=None, metadata=None)
 
 
 def main(ulog_file):
 
-    log_file = pyulog.ULog(ulog_file)
+    log = PX4LogFile(ulog_file)
 
-    create_plots(log_file, 'vehicle_global_position', ['alt', 'pressure_alt', 'terrain_alt'])
-    create_plots(log_file, 'vehicle_command', ['param1', 'param2', 'param3', 'param4', 'param5', 'param6', 'param7'])
-    create_plots(log_file, 'vehicle_attitude', ['rollspeed', 'pitchspeed', 'yawspeed'], file_name='vehicle_attitude_rates')
-    create_plots(log_file, 'actuator_outputs', ['output[0]', 'output[1]', 'output[2]', 'output[3]', 'output[4]', 'output[5]'])
+    log.create_plots('vehicle_global_position', ['alt', 'pressure_alt', 'terrain_alt'])
+    log.create_plots('vehicle_command', ['param1', 'param2', 'param3', 'param4', 'param5', 'param6', 'param7'])
+    log.create_plots('vehicle_attitude', ['rollspeed', 'pitchspeed', 'yawspeed'], file_name='vehicle_attitude_rates')
+    log.create_plots('actuator_outputs', ['output[0]', 'output[1]', 'output[2]', 'output[3]', 'output[4]', 'output[5]'])
 
     # list of parameters recorded in the log
-    print_available_parameters(log_file)
+    log.print_available_parameters()
 
-    # vehicle_attitude
-    vehicle_attitude = log_file.get_dataset('vehicle_attitude')
-    time_data = vehicle_attitude.data['timestamp']
-    q0 = vehicle_attitude.data['q[0]']
-    q1 = vehicle_attitude.data['q[1]']
-    q2 = vehicle_attitude.data['q[2]']
-    q3 = vehicle_attitude.data['q[3]']
-    quaternion2euler_array = np.frompyfunc(quaternion2euler, 4, 3)
-    roll, pitch, yaw = quaternion2euler_array(q0, q1, q2, q3)
-    fig, axs = plt.subplots(3, 1, sharex='all')
-    axs[0].set_title('vehicle_attitude')
-    axs[0].plot(time_data, roll * __rad2deg__, drawstyle='steps-post')
-    axs[0].set_ylabel('Roll')
-    axs[0].grid(True)
-    axs[1].plot(time_data, pitch * __rad2deg__, drawstyle='steps-post')
-    axs[1].set_ylabel('Pitch')
-    axs[1].grid(True)
-    axs[2].plot(time_data, yaw * __rad2deg__, drawstyle='steps-post')
-    axs[2].set_ylabel('Yaw')
-    axs[2].grid(True)
-    fig.tight_layout()
-    fig.savefig(f"vehicle_attitude.pdf", dpi=None, facecolor='w', edgecolor='w', orientation='portrait', papertype='a4',
-                format='pdf', transparent=False, bbox_inches=None, pad_inches=0.1, frameon=None, metadata=None)
-
-    # VERTICAL AXIS
-    actuator_outputs = log_file.get_dataset('actuator_outputs')
-    time_data_outputs = actuator_outputs.data['timestamp']
-    # motors 2 & 3
-    left_motors = (actuator_outputs.data['output[1]'] + actuator_outputs.data['output[2]']) / 2
-    # motors 1 & 4
-    right_motors = (actuator_outputs.data['output[0]'] + actuator_outputs.data['output[3]']) / 2
-    thrust = (actuator_outputs.data['output[1]'] + actuator_outputs.data['output[2]'] + actuator_outputs.data['output[0]'] + actuator_outputs.data['output[3]']) / 4
-    fig, axs = plt.subplots(2, 1, sharex='all')
-    axs[0].set_title('Vertical axis')
-    axs[0].plot(time_data_outputs, thrust, drawstyle='steps-post')
-    axs[0].set_ylabel('Thrust')
-    axs[0].grid(True)
-    vehicle_global_position = log_file.get_dataset('vehicle_global_position')
-    time_global_position = vehicle_global_position.data['timestamp']
-    alt = vehicle_global_position.data['alt']
-    axs[1].plot(time_global_position, alt, drawstyle='steps-post')
-    axs[1].set_ylabel('Altitude')
-    axs[1].grid(True)
-    fig.tight_layout()
-    fig.savefig(f"vertical_axis.pdf", dpi=None, facecolor='w', edgecolor='w', orientation='portrait', papertype='a4',
-                format='pdf', transparent=False, bbox_inches=None, pad_inches=0.1, frameon=None, metadata=None)
-
-    # LATERAL AXIS
-    fig, axs = plt.subplots(4, 1, sharex='all')
-    axs[0].set_title('Lateral axis')
-    axs[0].plot(time_data, roll * __rad2deg__, drawstyle='steps-post')
-    axs[0].set_ylabel('Roll')
-    axs[0].grid(True)
-    axs[1].plot(time_data_outputs, left_motors, drawstyle='steps-post')
-    axs[1].set_ylabel('Left motors')
-    axs[1].grid(True)
-    axs[2].plot(time_data_outputs, right_motors, drawstyle='steps-post')
-    axs[2].set_ylabel('Right motors')
-    axs[2].grid(True)
-    axs[3].plot(time_data_outputs, left_motors - right_motors, drawstyle='steps-post')
-    axs[3].grid(True)
-    fig.tight_layout()
-    fig.savefig(f"lateral_axis.pdf", dpi=None, facecolor='w', edgecolor='w', orientation='portrait', papertype='a4',
-                format='pdf', transparent=False, bbox_inches=None, pad_inches=0.1, frameon=None, metadata=None)
+    log.create_attitude_plots()
+    log.create_lateral_plots()
+    log.create_vertical_plots()
 
 
 if __name__ == '__main__':
