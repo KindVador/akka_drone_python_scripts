@@ -3,6 +3,7 @@ import os
 import argparse
 import math
 from pathlib import Path, PurePath
+from glob import glob
 import pyulog
 import numpy as np
 import pandas as pd
@@ -82,7 +83,6 @@ class PX4LogFile(pyulog.ULog):
                         print(f'ERROR for variable: {var_name}')
                         print(ve)
         df.fillna(method='ffill', inplace=True)
-        # df.fillna(method='bfill', inplace=True)
         return df
 
     def compute_additional_parameters(self):
@@ -90,11 +90,11 @@ class PX4LogFile(pyulog.ULog):
         va = self.get_dataset('vehicle_attitude')
         time_data = va.data['timestamp']
         roll, pitch, yaw = vquaternion2euler(va.data['q[0]'], va.data['q[1]'], va.data['q[2]'], va.data['q[3]'])
+
         # add time data to each angle and add to parameters list
         self.df['roll'] = pd.Series(roll, index=pd.to_datetime(time_data, unit='us'), name='roll')
         self.df['pitch'] = pd.Series(pitch, index=pd.to_datetime(time_data, unit='us'), name='pitch')
         self.df['yaw'] = pd.Series(yaw, index=pd.to_datetime(time_data, unit='us'), name='yaw')
-        # self.df.to_csv('df_computations.csv')
 
         # motors 2 & 3
         self.df['left_motors'] = (self.df['actuator_outputs.output[1]'] + self.df['actuator_outputs.output[2]']) / 2
@@ -107,21 +107,7 @@ class PX4LogFile(pyulog.ULog):
         # compute lift force
         self.df['lift'] = self.df['thrust'] * np.cos(self.df['roll']) * np.cos(self.df['pitch'])
 
-        # self.data['roll'] = np.stack([time_data, roll], axis=1)
-        # self.data['pitch'] = np.stack([time_data, pitch], axis=1)
-        # self.data['yaw'] = np.stack([time_data, yaw], axis=1)
-        # ao = self.get_dataset('actuator_outputs')
-        # # motors 2 & 3
-        # left_motors = (ao.data['output[1]'] + ao.data['output[2]']) / 2
-        # self.data['left_motors'] = np.stack([ao.data['timestamp'], left_motors], axis=1)
-        # motors 1 & 4
-        # right_motors = (ao.data['output[0]'] + ao.data['output[3]']) / 2
-        # self.data['right_motors'] = np.stack([ao.data['timestamp'], right_motors], axis=1)
-        # thrust = (left_motors + right_motors) / 4
-        # self.data['thrust'] = np.stack([ao.data['timestamp'], thrust], axis=1)
-
-        # compute lift force
-        # lift = thrust * np.cos(vroll) * np.cos(vpitch)
+        self.df.fillna(method='ffill', inplace=True)
 
     def create_plots(self, message_name, parameters, file_name=None, abs_path=None):
 
@@ -186,19 +172,15 @@ class PX4LogFile(pyulog.ULog):
     def create_lateral_plots(self, abs_path=None):
         fig, axs = plt.subplots(4, 1, sharex='all')
         axs[0].set_title('Lateral axis')
-        # axs[0].plot(self.data['roll'][:, 0], self.data['roll'][:, 1] * __rad2deg__, drawstyle='steps-post')
         axs[0].plot(self.df['roll'] * __rad2deg__, drawstyle='steps-post')
         axs[0].set_ylabel('Roll')
         axs[0].grid(True)
-        # axs[1].plot(self.data['left_motors'][:, 0], self.data['left_motors'][:, 1], drawstyle='steps-post')
         axs[1].plot(self.df['left_motors'], drawstyle='steps-post')
         axs[1].set_ylabel('Left motors')
         axs[1].grid(True)
-        # axs[2].plot(self.data['right_motors'][:, 0], self.data['right_motors'][:, 1], drawstyle='steps-post')
         axs[2].plot(self.df['right_motors'], drawstyle='steps-post')
         axs[2].set_ylabel('Right motors')
         axs[2].grid(True)
-        # axs[3].plot(self.data['right_motors'][:, 0], self.data['left_motors'][:, 1] - self.data['right_motors'][:, 1], drawstyle='steps-post')
         axs[3].plot(self.df['left_motors'] - self.df['right_motors'], drawstyle='steps-post')
         axs[3].grid(True)
         fig.tight_layout()
@@ -211,15 +193,12 @@ class PX4LogFile(pyulog.ULog):
     def create_attitude_plots(self, abs_path=None):
         fig, axs = plt.subplots(3, 1, sharex='all')
         axs[0].set_title('vehicle_attitude')
-        # axs[0].plot(self.data['roll'][:, 0], self.data['roll'][:, 1] * __rad2deg__, drawstyle='steps-post')
         axs[0].plot(self.df['roll'] * __rad2deg__, drawstyle='steps-post')
         axs[0].set_ylabel('Roll')
         axs[0].grid(True)
-        # axs[1].plot(self.data['pitch'][:, 0], self.data['pitch'][:, 1] * __rad2deg__, drawstyle='steps-post')
         axs[1].plot(self.df['pitch'] * __rad2deg__, drawstyle='steps-post')
         axs[1].set_ylabel('Pitch')
         axs[1].grid(True)
-        # axs[2].plot(self.data['yaw'][:, 0], self.data['yaw'][:, 1] * __rad2deg__, drawstyle='steps-post')
         axs[2].plot(self.df['yaw'] * __rad2deg__, drawstyle='steps-post')
         axs[2].set_ylabel('Yaw')
         axs[2].grid(True)
@@ -234,16 +213,10 @@ class PX4LogFile(pyulog.ULog):
     def create_vertical_plots(self, abs_path=None):
         fig, axs = plt.subplots(2, 1, sharex='all')
         axs[0].set_title('Vertical axis')
-        # axs[0].plot(self.data['thrust'][:, 0], self.data['thrust'][:, 1], drawstyle='steps-post')
         axs[0].plot(self.df['thrust'], drawstyle='steps-post')
         axs[0].plot(self.df['lift'], drawstyle='steps-post')
-        # axs[0].plot(time_data_outputs, lift, drawstyle='steps-post')
         axs[0].set_ylabel('Thrust & Lift')
         axs[0].grid(True)
-        # vgp = self.get_dataset('vehicle_global_position')
-        # time_global_position = vgp.data['timestamp']
-        # alt = vgp.data['alt']
-        # axs[1].plot(time_global_position, alt, drawstyle='steps-post')
         axs[1].plot(self.df['vehicle_global_position.alt'], drawstyle='steps-post')
         axs[1].set_ylabel('Altitude')
         axs[1].grid(True)
@@ -257,31 +230,37 @@ class PX4LogFile(pyulog.ULog):
 
 
 def main(ulog_file):
+    # TODO use multiprocessing
+    if os.path.isdir(ulog_file):
+        logs = glob(f'{ulog_file}/**/*.ulg', recursive=True)
+    else:
+        logs = [ulog_file]
 
-    # create folder
-    p = PurePath(ulog_file)
-    folder_abspath = os.path.join(p.parents[0], p.stem)
-    if not os.path.exists(folder_abspath):
-        os.mkdir(folder_abspath)
+    for log in logs:
+        p = PurePath(log)
 
-    log = PX4LogFile(ulog_file)
+        # create folder
+        folder_abspath = os.path.join(p.parents[0], p.stem)
+        if not os.path.exists(folder_abspath):
+            os.mkdir(folder_abspath)
 
-    log.create_plots('vehicle_global_position', ['alt', 'pressure_alt', 'terrain_alt'], abs_path=folder_abspath)
-    log.create_plots('vehicle_command', ['param1', 'param2', 'param3', 'param4', 'param5', 'param6', 'param7'], abs_path=folder_abspath)
-    log.create_plots('vehicle_attitude', ['rollspeed', 'pitchspeed', 'yawspeed'], file_name='vehicle_attitude_rates', abs_path=folder_abspath)
-    log.create_plots('actuator_outputs', ['output[0]', 'output[1]', 'output[2]', 'output[3]', 'output[4]', 'output[5]'], abs_path=folder_abspath)
+        log = PX4LogFile(log)
 
-    # list of parameters recorded in the log
-    # log.print_available_parameters()
+        log.create_plots('vehicle_global_position', ['alt', 'pressure_alt', 'terrain_alt'], abs_path=folder_abspath)
+        log.create_plots('vehicle_command', ['param1', 'param2', 'param3', 'param4', 'param5', 'param6', 'param7'], abs_path=folder_abspath)
+        log.create_plots('vehicle_attitude', ['rollspeed', 'pitchspeed', 'yawspeed'], file_name='vehicle_attitude_rates', abs_path=folder_abspath)
+        log.create_plots('actuator_outputs', ['output[0]', 'output[1]', 'output[2]', 'output[3]', 'output[4]', 'output[5]'], abs_path=folder_abspath)
 
-    log.create_attitude_plots(abs_path=folder_abspath)
-    log.create_lateral_plots(abs_path=folder_abspath)
-    log.create_vertical_plots(abs_path=folder_abspath)
+        # list of parameters recorded in the log
+        # log.print_available_parameters()
+
+        log.create_attitude_plots(abs_path=folder_abspath)
+        log.create_lateral_plots(abs_path=folder_abspath)
+        log.create_vertical_plots(abs_path=folder_abspath)
 
 
 if __name__ == '__main__':
     ap = argparse.ArgumentParser()
-    # TODO if a folder is passed instead of a file, run the script on all *.ulg files
     ap.add_argument("-f", "--file", help="path to the log file (*.ulg)")
     ap.add_argument("-s", "--start", help="start timestamp")
     ap.add_argument("-e", "--end", help="end timestamp")
