@@ -55,11 +55,13 @@ vquaternion2euler = np.vectorize(quaternion2euler, otypes=[np.float, np.float, n
 
 class PX4LogFile(pyulog.ULog):
 
-    def __init__(self, ulog_file=None):
+    def __init__(self, ulog_file=None, start_time=None, end_time=None):
         super(PX4LogFile, self).__init__(ulog_file)
         self.data = {}
         self.df = self.create_dataframe()
         self.compute_additional_parameters()
+        if start_time and end_time:
+            self.df = self.df.between_time(start_time, end_time)
 
     def create_dataframe(self):
         df = None
@@ -229,12 +231,12 @@ class PX4LogFile(pyulog.ULog):
                     format='pdf', transparent=False, bbox_inches=None, pad_inches=0.1, frameon=None, metadata=None)
 
 
-def main(ulog_file):
+def main(input, start_time=None, end_time=None):
     # TODO use multiprocessing
-    if os.path.isdir(ulog_file):
-        logs = glob(f'{ulog_file}/**/*.ulg', recursive=True)
+    if os.path.isdir(input):
+        logs = glob(f'{input}/**/*.ulg', recursive=True)
     else:
-        logs = [ulog_file]
+        logs = [input]
 
     for log in logs:
         p = PurePath(log)
@@ -244,7 +246,11 @@ def main(ulog_file):
         if not os.path.exists(folder_abspath):
             os.mkdir(folder_abspath)
 
-        log = PX4LogFile(log)
+        log = PX4LogFile(log, start_time=start_time, end_time=end_time)
+
+        # print in console some general information
+        print('Start timestamp: ', log.df.index[0].strftime('%Y-%m-%d %H:%M:%S'))
+        print('Last timestamp: ', log.df.index[-1].strftime('%Y-%m-%d %H:%M:%S'))
 
         log.create_plots('vehicle_global_position', ['alt', 'pressure_alt', 'terrain_alt'], abs_path=folder_abspath)
         log.create_plots('vehicle_command', ['param1', 'param2', 'param3', 'param4', 'param5', 'param6', 'param7'], abs_path=folder_abspath)
@@ -261,8 +267,18 @@ def main(ulog_file):
 
 if __name__ == '__main__':
     ap = argparse.ArgumentParser()
-    ap.add_argument("-f", "--file", help="path to the log file (*.ulg)")
-    ap.add_argument("-s", "--start", help="start timestamp")
-    ap.add_argument("-e", "--end", help="end timestamp")
+    ap.add_argument("-i", "--input", help="path to the log file (*.ulg) or folder with log files")
+    ap.add_argument("-s", "--start", help="start timestamp (e.g. 00:05:10)")
+    ap.add_argument("-e", "--end", help="end timestamp (e.g. 00:05:30)")
     args = vars(ap.parse_args())
-    main(args["file"])
+    if args['input'] and not os.path.isdir(args["input"]):
+        if args['start'] and args['end']:
+            main(input=args["input"], start_time=args['start'], end_time=args['end'])
+        else:
+            main(input=args["input"])
+    elif args['input'] and os.path.isdir(args["input"]):
+        if 'start' in args and 'end' in args:
+            print('start and end arguments are ignored when a folder is passed as input')
+        main(input=args["input"])
+    else:
+        raise ValueError('Missing argument')
