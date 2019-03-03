@@ -2,13 +2,14 @@
 import os
 import argparse
 import math
-from pathlib import Path, PurePath
+from pathlib import PurePath
 from glob import glob
 import pyulog
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 from matplotlib import rcParams
+from matplotlib.backends.backend_pdf import PdfPages
 
 
 rcParams['figure.figsize'] = (20, 10)
@@ -117,7 +118,7 @@ class PX4LogFile(pyulog.ULog):
 
         self.df.fillna(method='ffill', inplace=True)
 
-    def create_plots(self, message_name, parameters, file_name=None, abs_path=None, control_modes=None):
+    def create_plots(self, message_name, parameters, pdf_file, control_modes=None):
 
         fig, axs = plt.subplots(len(parameters), 1, sharex='all')
         for i in range(len(parameters)):
@@ -132,14 +133,8 @@ class PX4LogFile(pyulog.ULog):
                         y_pos = axs[a].get_yaxis().axes.get_ylim()
                         axs[0].text(k, y_pos[1], v, rotation=90, ha='right', va='bottom')
         fig.tight_layout()
-        if file_name is None:
-            file_name = message_name
-        if abs_path is None:
-            abs_path = Path.cwd()
-        path_file = os.path.join(abs_path, f"{file_name}.pdf")
-
-        fig.savefig(path_file, dpi=None, facecolor='w', edgecolor='w', orientation='portrait', papertype='a4',
-                    format='pdf', transparent=False, bbox_inches=None, pad_inches=0.1, frameon=None, metadata=None)
+        pdf_file.savefig(fig, dpi=None, facecolor='w', edgecolor='w', orientation='portrait', papertype='a4',
+                         transparent=False, bbox_inches=None, pad_inches=0.1, frameon=None, metadata=None)
 
     def available_parameters(self):
         _ap = []
@@ -182,7 +177,7 @@ class PX4LogFile(pyulog.ULog):
             for k, v in msg.data.items():
                 print('{}.{}'.format(msg.name, k))
 
-    def create_lateral_plots(self, abs_path=None, control_modes=None):
+    def create_lateral_plots(self, pdf_file, control_modes=None):
         fig, axs = plt.subplots(4, 1, sharex='all')
         axs[0].set_title('Lateral axis')
         axs[0].plot(self.df['roll'] * __rad2deg__, drawstyle='steps-post')
@@ -204,13 +199,10 @@ class PX4LogFile(pyulog.ULog):
                         y_pos = axs[a].get_yaxis().axes.get_ylim()
                         axs[0].text(k, y_pos[1], v, rotation=90, ha='right', va='bottom')
         fig.tight_layout()
-        if abs_path is None:
-            abs_path = Path.cwd()
-        path_file = os.path.join(abs_path, "lateral_axis.pdf")
-        fig.savefig(path_file, dpi=None, facecolor='w', edgecolor='w', orientation='portrait', papertype='a4',
-                    format='pdf', transparent=False, bbox_inches=None, pad_inches=0.1, frameon=None, metadata=None)
+        pdf_file.savefig(fig, dpi=None, facecolor='w', edgecolor='w', orientation='portrait', papertype='a4',
+                         transparent=False, bbox_inches=None, pad_inches=0.1, frameon=None, metadata=None)
 
-    def create_attitude_plots(self, abs_path=None, control_modes=None):
+    def create_attitude_plots(self, pdf_file, control_modes=None):
         fig, axs = plt.subplots(3, 1, sharex='all')
         axs[0].set_title('vehicle_attitude')
         axs[0].plot(self.df['roll'] * __rad2deg__, drawstyle='steps-post')
@@ -230,13 +222,11 @@ class PX4LogFile(pyulog.ULog):
                         y_pos = axs[a].get_yaxis().axes.get_ylim()
                         axs[0].text(k, y_pos[1], v, rotation=90, ha='right', va='bottom')
         fig.tight_layout()
-        if abs_path is None:
-            abs_path = Path.cwd()
-        path_file = os.path.join(abs_path, "vehicule_attitude.pdf")
-        fig.savefig(path_file, dpi=None, facecolor='w', edgecolor='w', orientation='portrait', papertype='a4',
-                    format='pdf', transparent=False, bbox_inches=None, pad_inches=0.1, frameon=None, metadata=None)
+        fig.tight_layout()
+        pdf_file.savefig(fig, dpi=None, facecolor='w', edgecolor='w', orientation='portrait', papertype='a4',
+                         transparent=False, bbox_inches=None, pad_inches=0.1, frameon=None, metadata=None)
 
-    def create_vertical_plots(self, abs_path=None, control_modes=None):
+    def create_vertical_plots(self, pdf_file, control_modes=None):
         fig, axs = plt.subplots(3, 1, sharex='all')
         axs[0].set_title('Vertical axis')
         axs[0].plot(self.df['thrust'], drawstyle='steps-post')
@@ -258,11 +248,8 @@ class PX4LogFile(pyulog.ULog):
         axs[2].set_ylabel('Navigation State')
         axs[2].grid(True)
         fig.tight_layout()
-        if abs_path is None:
-            abs_path = Path.cwd()
-        path_file = os.path.join(abs_path, "vertical_axis.pdf")
-        fig.savefig(path_file, dpi=None, facecolor='w', edgecolor='w', orientation='portrait', papertype='a4',
-                    format='pdf', transparent=False, bbox_inches=None, pad_inches=0.1, frameon=None, metadata=None)
+        pdf_file.savefig(fig, dpi=None, facecolor='w', edgecolor='w', orientation='portrait', papertype='a4',
+                         transparent=False, bbox_inches=None, pad_inches=0.1, frameon=None, metadata=None)
 
 
 def main(input, start_time=None, end_time=None):
@@ -294,17 +281,23 @@ def main(input, start_time=None, end_time=None):
                 control_modes[idx] = PX4LogFile.modes_dict[log.df.at[idx, col]]
             except KeyError as ke:
                 pass
-        log.create_plots('vehicle_global_position', ['alt', 'pressure_alt', 'terrain_alt'], abs_path=folder_abspath, control_modes=control_modes)
-        log.create_plots('vehicle_command', ['param1', 'param2', 'param3', 'param4', 'param5', 'param6', 'param7'], abs_path=folder_abspath, control_modes=control_modes)
-        log.create_plots('vehicle_attitude', ['rollspeed', 'pitchspeed', 'yawspeed'], file_name='vehicle_attitude_rates', abs_path=folder_abspath, control_modes=control_modes)
-        log.create_plots('actuator_outputs', ['output[0]', 'output[1]', 'output[2]', 'output[3]', 'output[4]', 'output[5]'], abs_path=folder_abspath, control_modes=control_modes)
+
+        # Create PDF file
+        pdf_file = PdfPages(os.path.join(folder_abspath, f'{p.stem}.pdf'))
+
+        log.create_plots('vehicle_global_position', ['alt', 'pressure_alt', 'terrain_alt'], pdf_file, control_modes=control_modes)
+        log.create_plots('vehicle_command', ['param1', 'param2', 'param3', 'param4', 'param5', 'param6', 'param7'], pdf_file, control_modes=control_modes)
+        log.create_plots('vehicle_attitude', ['rollspeed', 'pitchspeed', 'yawspeed'], pdf_file, control_modes=control_modes)
+        log.create_plots('actuator_outputs', ['output[0]', 'output[1]', 'output[2]', 'output[3]', 'output[4]', 'output[5]'], pdf_file, control_modes=control_modes)
 
         # list of parameters recorded in the log
         # log.print_available_parameters()
 
-        log.create_attitude_plots(abs_path=folder_abspath, control_modes=control_modes)
-        log.create_lateral_plots(abs_path=folder_abspath, control_modes=control_modes)
-        log.create_vertical_plots(abs_path=folder_abspath, control_modes=control_modes)
+        log.create_attitude_plots(pdf_file, control_modes=control_modes)
+        log.create_lateral_plots(pdf_file, control_modes=control_modes)
+        log.create_vertical_plots(pdf_file, control_modes=control_modes)
+
+        pdf_file.close()
 
 
 if __name__ == '__main__':
