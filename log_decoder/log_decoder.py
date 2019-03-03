@@ -55,6 +55,12 @@ vquaternion2euler = np.vectorize(quaternion2euler, otypes=[np.float, np.float, n
 
 class PX4LogFile(pyulog.ULog):
 
+    modes_dict = {0: 'Manual', 1: 'Altitude control', 2: 'Position control', 3: 'Auto mission', 4: 'Auto loiter',
+                  5: 'Auto return to launch', 6: 'RC recover', 7: 'Auto return to groundstation on data link loss',
+                  8: 'Auto land on engine failure', 9: 'Auto land on gps failure', 10: 'Acro', 11: 'Free',
+                  12: 'Descend', 13: 'Termination', 14: 'Offboard', 15: 'Stabilized', 16: 'Rattitude (aka "flip")',
+                  17: 'Takeoff', 18: 'Land', 19: 'Auto Follow', 20: 'Precision land with landing target'}
+
     def __init__(self, ulog_file=None, start_time=None, end_time=None):
         super(PX4LogFile, self).__init__(ulog_file)
         self.data = {}
@@ -111,15 +117,20 @@ class PX4LogFile(pyulog.ULog):
 
         self.df.fillna(method='ffill', inplace=True)
 
-    def create_plots(self, message_name, parameters, file_name=None, abs_path=None):
+    def create_plots(self, message_name, parameters, file_name=None, abs_path=None, control_modes=None):
 
-        msg = self.get_dataset(message_name)
-        time_data = msg.data['timestamp']
         fig, axs = plt.subplots(len(parameters), 1, sharex='all')
         for i in range(len(parameters)):
-            axs[i].plot(time_data, msg.data[parameters[i]], drawstyle='steps-post')
+            axs[i].plot(self.df[f'{message_name}.{parameters[i]}'], drawstyle='steps-post')
             axs[i].set_ylabel(parameters[i])
             axs[i].grid(True)
+        if control_modes:
+            for a in range(len(axs)):
+                for k, v in control_modes.items():
+                    axs[a].axvline(x=k, color='b', linestyle='--', label=v)
+                    if a == 0:
+                        y_pos = axs[a].get_yaxis().axes.get_ylim()
+                        axs[0].text(k, y_pos[1], v, rotation=90, ha='right', va='bottom')
         fig.tight_layout()
         if file_name is None:
             file_name = message_name
@@ -171,7 +182,7 @@ class PX4LogFile(pyulog.ULog):
             for k, v in msg.data.items():
                 print('{}.{}'.format(msg.name, k))
 
-    def create_lateral_plots(self, abs_path=None):
+    def create_lateral_plots(self, abs_path=None, control_modes=None):
         fig, axs = plt.subplots(4, 1, sharex='all')
         axs[0].set_title('Lateral axis')
         axs[0].plot(self.df['roll'] * __rad2deg__, drawstyle='steps-post')
@@ -185,6 +196,13 @@ class PX4LogFile(pyulog.ULog):
         axs[2].grid(True)
         axs[3].plot(self.df['left_motors'] - self.df['right_motors'], drawstyle='steps-post')
         axs[3].grid(True)
+        if control_modes:
+            for a in range(len(axs)):
+                for k, v in control_modes.items():
+                    axs[a].axvline(x=k, color='b', linestyle='--', label=v)
+                    if a == 0:
+                        y_pos = axs[a].get_yaxis().axes.get_ylim()
+                        axs[0].text(k, y_pos[1], v, rotation=90, ha='right', va='bottom')
         fig.tight_layout()
         if abs_path is None:
             abs_path = Path.cwd()
@@ -192,7 +210,7 @@ class PX4LogFile(pyulog.ULog):
         fig.savefig(path_file, dpi=None, facecolor='w', edgecolor='w', orientation='portrait', papertype='a4',
                     format='pdf', transparent=False, bbox_inches=None, pad_inches=0.1, frameon=None, metadata=None)
 
-    def create_attitude_plots(self, abs_path=None):
+    def create_attitude_plots(self, abs_path=None, control_modes=None):
         fig, axs = plt.subplots(3, 1, sharex='all')
         axs[0].set_title('vehicle_attitude')
         axs[0].plot(self.df['roll'] * __rad2deg__, drawstyle='steps-post')
@@ -204,16 +222,22 @@ class PX4LogFile(pyulog.ULog):
         axs[2].plot(self.df['yaw'] * __rad2deg__, drawstyle='steps-post')
         axs[2].set_ylabel('Yaw')
         axs[2].grid(True)
+        if control_modes:
+            for a in range(len(axs)):
+                for k, v in control_modes.items():
+                    axs[a].axvline(x=k, color='b', linestyle='--', label=v)
+                    if a == 0:
+                        y_pos = axs[a].get_yaxis().axes.get_ylim()
+                        axs[0].text(k, y_pos[1], v, rotation=90, ha='right', va='bottom')
         fig.tight_layout()
         if abs_path is None:
             abs_path = Path.cwd()
         path_file = os.path.join(abs_path, "vehicule_attitude.pdf")
-        fig.savefig(path_file, dpi=None, facecolor='w', edgecolor='w', orientation='portrait',
-                    papertype='a4',
+        fig.savefig(path_file, dpi=None, facecolor='w', edgecolor='w', orientation='portrait', papertype='a4',
                     format='pdf', transparent=False, bbox_inches=None, pad_inches=0.1, frameon=None, metadata=None)
 
-    def create_vertical_plots(self, abs_path=None):
-        fig, axs = plt.subplots(2, 1, sharex='all')
+    def create_vertical_plots(self, abs_path=None, control_modes=None):
+        fig, axs = plt.subplots(3, 1, sharex='all')
         axs[0].set_title('Vertical axis')
         axs[0].plot(self.df['thrust'], drawstyle='steps-post')
         axs[0].plot(self.df['lift'], drawstyle='steps-post')
@@ -222,12 +246,22 @@ class PX4LogFile(pyulog.ULog):
         axs[1].plot(self.df['vehicle_global_position.alt'], drawstyle='steps-post')
         axs[1].set_ylabel('Altitude')
         axs[1].grid(True)
+        if control_modes:
+            for a in range(len(axs)):
+                for k, v in control_modes.items():
+                    axs[a].axvline(x=k, color='b', linestyle='--', label=v)
+                    if a == 0:
+                        y_pos = axs[a].get_yaxis().axes.get_ylim()
+                        axs[0].text(k, y_pos[1], v, rotation=90, ha='right', va='bottom')
+        # vehicle_status.nav_state
+        axs[2].plot(self.df['vehicle_status.nav_state'], drawstyle='steps-post')
+        axs[2].set_ylabel('Navigation State')
+        axs[2].grid(True)
         fig.tight_layout()
         if abs_path is None:
             abs_path = Path.cwd()
         path_file = os.path.join(abs_path, "vertical_axis.pdf")
-        fig.savefig(path_file, dpi=None, facecolor='w', edgecolor='w', orientation='portrait',
-                    papertype='a4',
+        fig.savefig(path_file, dpi=None, facecolor='w', edgecolor='w', orientation='portrait', papertype='a4',
                     format='pdf', transparent=False, bbox_inches=None, pad_inches=0.1, frameon=None, metadata=None)
 
 
@@ -252,17 +286,25 @@ def main(input, start_time=None, end_time=None):
         print('Start timestamp: ', log.df.index[0].strftime('%Y-%m-%d %H:%M:%S'))
         print('Last timestamp: ', log.df.index[-1].strftime('%Y-%m-%d %H:%M:%S'))
 
-        log.create_plots('vehicle_global_position', ['alt', 'pressure_alt', 'terrain_alt'], abs_path=folder_abspath)
-        log.create_plots('vehicle_command', ['param1', 'param2', 'param3', 'param4', 'param5', 'param6', 'param7'], abs_path=folder_abspath)
-        log.create_plots('vehicle_attitude', ['rollspeed', 'pitchspeed', 'yawspeed'], file_name='vehicle_attitude_rates', abs_path=folder_abspath)
-        log.create_plots('actuator_outputs', ['output[0]', 'output[1]', 'output[2]', 'output[3]', 'output[4]', 'output[5]'], abs_path=folder_abspath)
+        # find timestamps for each control mode
+        col = 'vehicle_status.nav_state'
+        control_modes = {}
+        for idx in log.df[col].diff()[log.df[col].diff() != 0].index.values:
+            try:
+                control_modes[idx] = PX4LogFile.modes_dict[log.df.at[idx, col]]
+            except KeyError as ke:
+                pass
+        log.create_plots('vehicle_global_position', ['alt', 'pressure_alt', 'terrain_alt'], abs_path=folder_abspath, control_modes=control_modes)
+        log.create_plots('vehicle_command', ['param1', 'param2', 'param3', 'param4', 'param5', 'param6', 'param7'], abs_path=folder_abspath, control_modes=control_modes)
+        log.create_plots('vehicle_attitude', ['rollspeed', 'pitchspeed', 'yawspeed'], file_name='vehicle_attitude_rates', abs_path=folder_abspath, control_modes=control_modes)
+        log.create_plots('actuator_outputs', ['output[0]', 'output[1]', 'output[2]', 'output[3]', 'output[4]', 'output[5]'], abs_path=folder_abspath, control_modes=control_modes)
 
         # list of parameters recorded in the log
         # log.print_available_parameters()
 
-        log.create_attitude_plots(abs_path=folder_abspath)
-        log.create_lateral_plots(abs_path=folder_abspath)
-        log.create_vertical_plots(abs_path=folder_abspath)
+        log.create_attitude_plots(abs_path=folder_abspath, control_modes=control_modes)
+        log.create_lateral_plots(abs_path=folder_abspath, control_modes=control_modes)
+        log.create_vertical_plots(abs_path=folder_abspath, control_modes=control_modes)
 
 
 if __name__ == '__main__':
