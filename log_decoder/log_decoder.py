@@ -62,15 +62,48 @@ class PX4LogFile(pyulog.ULog):
                   12: 'Descend', 13: 'Termination', 14: 'Offboard', 15: 'Stabilized', 16: 'Rattitude (aka "flip")',
                   17: 'Takeoff', 18: 'Land', 19: 'Auto Follow', 20: 'Precision land with landing target'}
 
-    def __init__(self, ulog_file=None, start_time=None, end_time=None):
+    def __init__(self, ulog_file=None, start_time=None, end_time=None, lazy=True):
         super(PX4LogFile, self).__init__(ulog_file)
         self.data = {}
-        self.df = self.create_dataframe()
+        if lazy:
+            self.df = None
+        else:
+            self.df = self._create_dataframe()
         self.compute_additional_parameters()
         if start_time and end_time:
             self.df = self.df.between_time(start_time, end_time)
 
-    def create_dataframe(self):
+    def __getitem__(self, item):
+        if self.df is not None and item in self.df.columns:
+            return self.df[item]
+        else:
+            self._add_parameter_to_df(item)
+            return self.df[item]
+
+    def _add_parameter_to_df(self, var_name):
+        if '.' in var_name:
+            msg_name = var_name.split('.')[0]
+            parameter_name = var_name.split('.')[1]
+            ds = self.get_dataset(msg_name)
+            ts = ds.data['timestamp']
+            if self.df is None:
+                self.df = pd.DataFrame(ds.data[parameter_name], index=pd.to_datetime(ts, unit='us'), columns=[var_name])
+            else:
+                df2 = pd.DataFrame(ds.data[parameter_name], index=pd.to_datetime(ts, unit='us'), columns=[var_name])
+                try:
+                    if self.df.shape[0] > df2.shape[0]:
+                        self.df = pd.concat([self.df, df2], axis=1)
+                    else:
+                        self.df = pd.concat([df2, self.df], axis=1)
+                except ValueError as ve:
+                    print(f'ERROR for variable: {var_name}')
+                    print(ve)
+        else:
+            raise ValueError("Invalid parameter, it should be composed of message_name.parameter_name ")
+
+        self.df.fillna(method='ffill', inplace=True)
+
+    def _create_dataframe(self):
         df = None
         for msg in self.data_list:
             ds = self.get_dataset(msg.name)
@@ -95,34 +128,31 @@ class PX4LogFile(pyulog.ULog):
         return df
 
     def compute_additional_parameters(self):
+        # motors 2 & 3
+        self.df['left_motors'] = (self['actuator_outputs.output[1]'] + self['actuator_outputs.output[2]']) / 2
+        # motors 1 & 4
+        self.df['right_motors'] = (self['actuator_outputs.output[0]'] + self['actuator_outputs.output[3]']) / 2
+        # compute thrust
+        self.df['thrust'] = (self['left_motors'] + self['right_motors']) / 2
         # compute euler angles from quaternion
         va = self.get_dataset('vehicle_attitude')
         time_data = va.data['timestamp']
+        for i in range(4):
+            _ = self[f'vehicle_attitude.q[{str(i)}]']
         roll, pitch, yaw = vquaternion2euler(va.data['q[0]'], va.data['q[1]'], va.data['q[2]'], va.data['q[3]'])
-
         # add time data to each angle and add to parameters list
         self.df['roll'] = pd.Series(roll, index=pd.to_datetime(time_data, unit='us'), name='roll')
         self.df['pitch'] = pd.Series(pitch, index=pd.to_datetime(time_data, unit='us'), name='pitch')
         self.df['yaw'] = pd.Series(yaw, index=pd.to_datetime(time_data, unit='us'), name='yaw')
-
-        # motors 2 & 3
-        self.df['left_motors'] = (self.df['actuator_outputs.output[1]'] + self.df['actuator_outputs.output[2]']) / 2
-        # motors 1 & 4
-        self.df['right_motors'] = (self.df['actuator_outputs.output[0]'] + self.df['actuator_outputs.output[3]']) / 2
-
-        # compute thrust
-        self.df['thrust'] = (self.df['left_motors'] + self.df['right_motors']) / 2
-
         # compute lift force
-        self.df['lift'] = self.df['thrust'] * np.cos(self.df['roll']) * np.cos(self.df['pitch'])
-
+        self.df['lift'] = self['thrust'] * np.cos(self['roll']) * np.cos(self['pitch'])
         self.df.fillna(method='ffill', inplace=True)
 
     def create_plots(self, message_name, parameters, pdf_file, control_modes=None):
 
         fig, axs = plt.subplots(len(parameters), 1, sharex='all')
         for i in range(len(parameters)):
-            axs[i].plot(self.df[f'{message_name}.{parameters[i]}'], drawstyle='steps-post')
+            axs[i].plot(self[f'{message_name}.{parameters[i]}'], drawstyle='steps-post')
             axs[i].set_ylabel(parameters[i])
             axs[i].grid(True)
         if control_modes:
@@ -180,16 +210,16 @@ class PX4LogFile(pyulog.ULog):
     def create_lateral_plots(self, pdf_file, control_modes=None):
         fig, axs = plt.subplots(4, 1, sharex='all')
         axs[0].set_title('Lateral axis')
-        axs[0].plot(self.df['roll'] * __rad2deg__, drawstyle='steps-post')
+        axs[0].plot(self['roll'] * __rad2deg__, drawstyle='steps-post')
         axs[0].set_ylabel('Roll')
         axs[0].grid(True)
-        axs[1].plot(self.df['left_motors'], drawstyle='steps-post')
+        axs[1].plot(self['left_motors'], drawstyle='steps-post')
         axs[1].set_ylabel('Left motors')
         axs[1].grid(True)
-        axs[2].plot(self.df['right_motors'], drawstyle='steps-post')
+        axs[2].plot(self['right_motors'], drawstyle='steps-post')
         axs[2].set_ylabel('Right motors')
         axs[2].grid(True)
-        axs[3].plot(self.df['left_motors'] - self.df['right_motors'], drawstyle='steps-post')
+        axs[3].plot(self['left_motors'] - self['right_motors'], drawstyle='steps-post')
         axs[3].grid(True)
         if control_modes:
             for a in range(len(axs)):
@@ -205,13 +235,13 @@ class PX4LogFile(pyulog.ULog):
     def create_attitude_plots(self, pdf_file, control_modes=None):
         fig, axs = plt.subplots(3, 1, sharex='all')
         axs[0].set_title('vehicle_attitude')
-        axs[0].plot(self.df['roll'] * __rad2deg__, drawstyle='steps-post')
+        axs[0].plot(self['roll'] * __rad2deg__, drawstyle='steps-post')
         axs[0].set_ylabel('Roll')
         axs[0].grid(True)
-        axs[1].plot(self.df['pitch'] * __rad2deg__, drawstyle='steps-post')
+        axs[1].plot(self['pitch'] * __rad2deg__, drawstyle='steps-post')
         axs[1].set_ylabel('Pitch')
         axs[1].grid(True)
-        axs[2].plot(self.df['yaw'] * __rad2deg__, drawstyle='steps-post')
+        axs[2].plot(self['yaw'] * __rad2deg__, drawstyle='steps-post')
         axs[2].set_ylabel('Yaw')
         axs[2].grid(True)
         if control_modes:
@@ -229,11 +259,11 @@ class PX4LogFile(pyulog.ULog):
     def create_vertical_plots(self, pdf_file, control_modes=None):
         fig, axs = plt.subplots(3, 1, sharex='all')
         axs[0].set_title('Vertical axis')
-        axs[0].plot(self.df['thrust'], drawstyle='steps-post')
-        axs[0].plot(self.df['lift'], drawstyle='steps-post')
+        axs[0].plot(self['thrust'], drawstyle='steps-post')
+        axs[0].plot(self['lift'], drawstyle='steps-post')
         axs[0].set_ylabel('Thrust & Lift')
         axs[0].grid(True)
-        axs[1].plot(self.df['vehicle_global_position.alt'], drawstyle='steps-post')
+        axs[1].plot(self['vehicle_global_position.alt'], drawstyle='steps-post')
         axs[1].set_ylabel('Altitude')
         axs[1].grid(True)
         if control_modes:
@@ -244,7 +274,7 @@ class PX4LogFile(pyulog.ULog):
                         y_pos = axs[a].get_yaxis().axes.get_ylim()
                         axs[0].text(k, y_pos[1], v, rotation=90, ha='right', va='bottom')
         # vehicle_status.nav_state
-        axs[2].plot(self.df['vehicle_status.nav_state'], drawstyle='steps-post')
+        axs[2].plot(self['vehicle_status.nav_state'], drawstyle='steps-post')
         axs[2].set_ylabel('Navigation State')
         axs[2].grid(True)
         fig.tight_layout()
@@ -253,7 +283,6 @@ class PX4LogFile(pyulog.ULog):
 
 
 def main(input, start_time=None, end_time=None):
-    # TODO use multiprocessing
     if os.path.isdir(input):
         logs = glob(f'{input}/**/*.ulg', recursive=True)
     else:
@@ -276,7 +305,7 @@ def main(input, start_time=None, end_time=None):
         # find timestamps for each control mode
         col = 'vehicle_status.nav_state'
         control_modes = {}
-        for idx in log.df[col].diff()[log.df[col].diff() != 0].index.values:
+        for idx in log[col].diff()[log[col].diff() != 0].index.values:
             try:
                 control_modes[idx] = PX4LogFile.modes_dict[log.df.at[idx, col]]
             except KeyError as ke:
