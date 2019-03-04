@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 
+
 ###############################################################################
 # Find_Target.py
 # PAM;
@@ -14,27 +15,44 @@
 # v1;2018-10-12
 #	Use contour size to evaluate height
 #
+# v2;2018-12-22
+# -Add centers of detected contours to a list for easy ourtliers detection and
+#  filtering
+# -convert to support Python3
 ###############################################################################
 
 
 # import the necessary packages
 import argparse
-import imutils
+# import imutils
 import cv2
 import numpy as np
 import math
 
 # construct the argument parse and parse the arguments
 ap = argparse.ArgumentParser()
-ap.add_argument("-v", "--video", help="path to the video file")
-ap.add_argument("-n", "--noouput", help="does not display video, only give stdout ")
+ap.add_argument("-v", "--video", help="path to the video file. If not present, will use Webcam(0)")
+ap.add_argument("-n", "--nooutput", help="does not display video, only give stdout ", action='store_true')
 args = vars(ap.parse_args())
 
-# load the video
-camera = cv2.VideoCapture(args["video"])
+# load the video  : if no video arg, open webcam
+if None == args["video"]:
+    camera = cv2.VideoCapture(0)
+    print("Video cam ")
+else:
+    camera = cv2.VideoCapture(args["video"])
+    print("Video File :" + args["video"])
 
-# #################################################################################3
-print("############################################################")
+# No output  flag
+# if args["nooutput"]:
+#  print(" Will not display video")
+# if not(args["nooutput"]):
+#  print("Will display video")
+
+
+##################################################################################3
+# print ("############################################################")
+
 
 # physical sizes
 White_rect_size = 410.0
@@ -50,7 +68,7 @@ CamDegPerPix = np.arctan(40.0 / 170.0) / 251.0  # rad
 # print ("Rad " + str(np.arctan(40.0/170.0)), " deg", str(np.rad2deg(np.arctan(40.0/170.0)))," CamDegPerPix", str(CamDegPerPix))
 # reminder
 #	if the real size of object is a [mm] and the b is the number of  pixel I see a
-#	    hight = a/tan(b*CamDegPerPix)
+#	    hight = a/tan(b*CamDegPerPix)Kim Soo Ah
 
 
 # Altitude
@@ -89,6 +107,7 @@ while True:
     Yellow_center = [np.nan, np.nan]
     White_center = [np.nan, np.nan]
     status = ""
+    centers = []  # added in V2 to stack up all centers (White rect, blue red ,yellow)
 
     ##################################################################################
     # grab the current frame and initialize the status text
@@ -126,8 +145,8 @@ while True:
         peri = cv2.arcLength(c, True)
         approx = cv2.approxPolyDP(c, 0.1 * peri, True)  ##modified Epsilon 0.01 to 0.1
 
-        # ensure that the approximated contour is "roughly" rectangular
-        if 3 <= len(approx) <= 8:
+        # ensure that the approximated contour is "rounooutputghly" rectangular
+        if len(approx) >= 3 and len(approx) <= 8:
 
             Angles = np.zeros(len(approx))
             Length = np.zeros(len(approx))
@@ -137,6 +156,7 @@ while True:
             # print(approx)
             # print( "++")
             # print(approx.shape)
+            # V0 ; 2018-09-09
             # print( "++")
             ##print(np.array([approx[0]]).shape)
             # print(np.sqrt((approx[0][0][0]-approx[1][0][0])**2 + (approx[0][0][1]-approx[1][0][1])**2))
@@ -148,7 +168,7 @@ while True:
             # print(approx_1)
             for toto in range(0, len(approx_1) - 1):  # all but one
                 Length[toto] = (np.sqrt((approx_1[toto][0][0] - approx_1[toto + 1][0][0]) ** 2 + (
-                        approx_1[toto][0][1] - approx_1[toto + 1][0][1]) ** 2))
+                            approx_1[toto][0][1] - approx_1[toto + 1][0][1]) ** 2))
             # print(Length)
             ###############################
             # to compute angles, I add the last element at the begin
@@ -171,7 +191,8 @@ while True:
             #		cv2.rectangle(output, (approx[toto][0][0] - 5, approx[toto][0][1] - 5), (approx[toto][0][0] + 5, approx[toto][0][1] + 5), (255, 0, 0), -1)
             #		cv2.rectangle(output, (approx[toto+1][0][0] - 5, approx[toto+1][0][1] - 5), (approx[toto+1][0][0] + 5, approx[toto+1][0][1] + 5), (255, 0, 0), -1)
 
-            # compute the bounding box of the approximated contour and
+            # compute the bounding box of the approximated con
+            # V0 ; 2018-09-09 tour and
             # use the bounding box to compute the aspect ratio
             (x, y, w, h) = cv2.boundingRect(approx)
             aspectRatio = w / float(h)
@@ -188,7 +209,7 @@ while True:
             keepAspectRatio = aspectRatio >= 0.8 and aspectRatio <= 1.2
 
             # ensure that the contour passes all our tests
-            if keepDims and keepSolidity and keepAspectRatio:
+            if (keepDims and keepSolidity and keepAspectRatio):
                 # print(len(approx))
                 # draw an outline around the target and update the status
                 # text
@@ -202,9 +223,10 @@ while True:
                 M = cv2.moments(approx)
                 (cX, cY) = (int(M["m10"] // M["m00"]), int(M["m01"] // M["m00"]))
                 White_rect_center = (cX, cY)
+                centers.append((White_rect_center[0], White_rect_center[1], 'w_square'))
 
-        # Altitude
-        # White_rect_Alt = White_rect_size/np.tan(b*CamDegPerPix)
+            # Altitude
+            # White_rect_Alt = White_rect_size/np.tan(b*CamDegPerPix)
 
     ## end of the Square detection from "Find_square.py"
     ###############################################################################
@@ -322,19 +344,21 @@ while True:
                 # status = status +" Blue contour found :" + str(sizeofBlueContour) + "pix. = "
                 # status = status + str(Blue_diam/np.tan(sizeofBlueContour*CamDegPerPix))
                 Blue_center = np.mean(c, axis=0)
+                if len(Blue_center[0]) > 1:
+                    centers.append((Blue_center[0][0], Blue_center[0][1], 'b'))
                 # compute here the size of the rectangle and compute altitude
                 ## Altitude
                 Blue_Alt = Blue_diam / np.tan((np.max(np.amax(c, axis=0) - np.min(c, axis=0))) * CamDegPerPix)
 
-    #
-    # compute the center of the contour region and draw the
-    # crosshairs
-    # M = cv2.moments(approx)
-    # (cX, cY) = (int(M["m10"] // M["m00"]), int(M["m01"] // M["m00"]))
-    # (startX, endX) = (int(cX - (w * 0.1)), int(cX + (w * 0.1)))
-    # (startY, endY) = (int(cY - (h * 0.1)), int(cY + (h * 0.1)))
-    # cv2.line(output, (startX, cY), (endX, cY), (200,200, 255), 2)
-    # cv2.line(output, (cX, startY), (cX, endY), (200,200, 255), 2)
+        #
+        # compute the center of the contour region and draw the
+        # crosshairs
+        # M = cv2.moments(approx)
+        # (cX, cY) = (int(M["m10"] // M["m00"]), int(M["m01"] // M["m00"]))
+        # (startX, endX) = (int(cX - (w * 0.1)), int(cX + (w * 0.1)))
+        # (startY, endY) = (int(cY - (h * 0.1)), int(cY + (h * 0.1)))
+        # cv2.line(output, (startX, cY), (endX, cY), (200,200, 255), 2)
+        # cv2.line(output, (cX, startY), (cX, endY), (200,200, 255), 2)
 
     # end of detect the circle in the Blue mask
     ###############################################################################
@@ -381,6 +405,8 @@ while True:
                 # status = status +" Red contour found :" + str(SizeOfRedContour) + "pix. "
                 # status = status + str( Red_diam/np.tan(SizeOfRedContour*CamDegPerPix))
                 Red_center = np.mean(c, axis=0)
+                if len(Red_center[0]) > 1:
+                    centers.append((Red_center[0][0], Red_center[0][1], 'r'))
                 # compute here the size of the rectangle and compute altitude
                 ## Altitude
                 Red_Alt = Red_diam / np.tan((np.max(np.amax(c, axis=0) - np.min(c, axis=0))) * CamDegPerPix)
@@ -430,6 +456,8 @@ while True:
                 # cv2.drawContours(output, [c], -1, (0,255, 255), 2)
                 # status = status +" Yellow contour found :" + str(np.max(np.amax(c, axis=0) - np.min(c, axis=0))) + "pix. "
                 Yellow_center = np.mean(c, axis=0)
+                if len(Yellow_center[0]) > 1:
+                    centers.append((Yellow_center[0][0], Yellow_center[0][1], 'y'))
                 ## Altitude
                 Yellow_Alt = Yellow_diam / np.tan((np.max(np.amax(c, axis=0) - np.min(c, axis=0))) * CamDegPerPix)
 
@@ -478,8 +506,10 @@ while True:
                 # cv2.drawContours(output, [c], -1, (255,255, 255), 2)
                 # status = status +" White contour found "
                 White_center = np.mean(c, axis=0)
-        # print(approx)
-        # compute here the size of the rectangle and compute altitude
+                if len(White_center[0]) > 1:
+                    centers.append((White_center[0][0], White_center[0][1], 'w'))
+                # print(approx)
+            # compute here the size of the rectangle and compute altitude
 
     # end of detect the circle in the Yellow mask
     ###############################################################################
@@ -492,6 +522,27 @@ while True:
         alt_str = "Alt: " + '|' * int(alt / 100) + " " + str(alt)
 
     # compute the mean of the center, for none -zero element
+    print('-------------------------------------------')
+    centers_dict = {}
+    for color in ['w', 'b', 'r', 'y', 'w_square']:
+        c_centers = [(x[0], x[1]) for x in centers if x[2] == color]
+        # if len(c_centers) > 1:
+        # 	c_center = (np.mean([x[0] for x in c_centers]), np.mean([x[1] for x in c_centers]))
+        # elif len(c_centers) == 1:
+        if len(c_centers) == 1:
+            centers_dict[color] = c_centers[0]
+            print(color, centers_dict[color])
+
+    if len(centers_dict) == 0:
+        pass
+    elif len(centers_dict) == 1:
+        pass
+    elif len(centers_dict) == 2:
+        pass
+    elif len(centers_dict) == 3:
+        pass
+    elif len(centers_dict) == 4:
+        pass
 
     # print("  .....   ")
     # print(str([White_rect_center ,Blue_center, Red_center, Yellow_center]))
@@ -504,9 +555,15 @@ while True:
 
     cv2.putText(output, alt_str, (20, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 2)
 
-    # show the frame and record if a key is pressed
-    # cv2.imshow("Frame", output)
+    if args["nooutput"]:
+        print(alt_str + " frame#" + str(Framecounter))
 
+    #########################################################################3
+
+    # show the frame
+    if not (args["nooutput"]):
+        cv2.imshow("Frame", output)
+    # and record if a key is pressed
     key = cv2.waitKey(1) & 0xFF
 
     # if the 'q' key is pressed, stop the loop
