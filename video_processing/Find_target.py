@@ -562,21 +562,22 @@ while True:
         k3, c3 = centers_dict.popitem()
         final_center = (vote(c1[0], c2[0], c3[0]), vote(c1[1], c2[1], c3[1]))
     elif len(centers_dict) == 4:
-        k1, c1 = centers_dict.popitem()
-        k2, c2 = centers_dict.popitem()
-        k3, c3 = centers_dict.popitem()
-        k4, c4 = centers_dict.popitem()
-        # TODO add algo to choose best coordinates between 4 sources
-        final_center = (0, 0)
+        x_values = sorted([x[0] for x in centers_dict.values()], reverse=False)
+        y_values = sorted([x[1] for x in centers_dict.values()], reverse=False)
+        final_center = ((x_values[1] + x_values[2]) * 0.5, (y_values[1] + y_values[2]) * 0.5)
+    elif len(centers_dict) == 5:
+        x_values = sorted([x[0] for x in centers_dict.values()], reverse=False)
+        y_values = sorted([x[1] for x in centers_dict.values()], reverse=False)
+        final_center = (vote(x_values[1], x_values[2], x_values[3]), vote(y_values[1], y_values[2], y_values[3]))
 
     print('==> final center:', final_center)
 
     # print("  .....   ")
     # print(str([White_rect_center ,Blue_center, Red_center, Yellow_center]))
 
-    ##center = np.nanmean([White_rect_center ,Blue_center, Red_center, Yellow_center],axis=0)
+    # center = np.nanmean([White_rect_center ,Blue_center, Red_center, Yellow_center],axis=0)
     # if not np.isnan(Red_center).any():
-    #	print(str(center))
+    #   print(str(center))
 
     # compute the sring output
 
@@ -585,7 +586,7 @@ while True:
     if args["nooutput"]:
         print(alt_str + " frame#" + str(Framecounter))
 
-    #########################################################################3
+    #########################################################################
 
     # show the frame
     if not (args["nooutput"]):
