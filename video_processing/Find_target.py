@@ -19,6 +19,16 @@
 # -Add centers of detected contours to a list for easy ourtliers detection and
 #  filtering
 # -convert to support Python3
+#
+# V3;2019-03-04
+#  Florian version, added
+#
+# V4 2019-03-11
+#   put some comment on Flo's code
+#   added some np.floor to declutter display on console mode (-n)
+#
+# V5 2019-05-27
+#		corrects a but (wq not defined) in V4
 ###############################################################################
 
 
@@ -27,6 +37,7 @@ import argparse
 # import imutils
 import cv2
 import numpy as np
+
 # import math
 
 # construct the argument parse and parse the arguments
@@ -43,6 +54,7 @@ else:
     camera = cv2.VideoCapture(args["video"])
     print("Video File :" + args["video"])
 
+
 # No output  flag
 # if args["nooutput"]:
 #  print(" Will not display video")
@@ -50,6 +62,7 @@ else:
 #  print("Will display video")
 
 
+## declaration of the Voting logic function.
 def vote(e1, e2, e3):
     if e1 == e2:
         s1 = e1
@@ -184,7 +197,7 @@ while True:
             # print(approx_1)
             for toto in range(0, len(approx_1) - 1):  # all but one
                 Length[toto] = (np.sqrt((approx_1[toto][0][0] - approx_1[toto + 1][0][0]) ** 2 + (
-                            approx_1[toto][0][1] - approx_1[toto + 1][0][1]) ** 2))
+                        approx_1[toto][0][1] - approx_1[toto + 1][0][1]) ** 2))
             # print(Length)
             ###############################
             # to compute angles, I add the last element at the begin
@@ -481,7 +494,7 @@ while True:
     ###############################################################################
 
     ##############################################################################
-    # Detect White circle(instead of the yellow) or square contour in the picture
+    # Detect White/yellowish circle(instead of the yellow) or square contour in the picture
 
     # detect circles in the image
 
@@ -527,7 +540,7 @@ while True:
                 # print(approx)
             # compute here the size of the rectangle and compute altitude
 
-    # end of detect the circle in the Yellow mask
+    # end of detect the circle in the White/yellowish  mask
     ###############################################################################
 
     # compute the mean of the hight, for none - zero element
@@ -535,20 +548,27 @@ while True:
     if np.isnan(alt):
         alt_str = "Alt: Unknown"
     else:
-        alt_str = "Alt: " + '|' * int(alt / 100) + " " + str(alt)
+        if args["nooutput"]:
+            alt_str = "Alt: " + str(np.floor(alt))
+        else:
+            alt_str = "Alt: " + '|' * int(alt / 100) + " " + str(alt)
 
     # compute the mean of the center, for none -zero element
-    print('--------------------------------------------------------------------------------')
+    # print('--------------------------------------------------------------------------------')
     centers_dict = {}
     for color in ['w', 'b', 'r', 'y', 'w_square']:
         c_centers = [(x[0], x[1]) for x in centers if x[2] == color]
-        # if len(c_centers) > 1:
-        # 	c_center = (np.mean([x[0] for x in c_centers]), np.mean([x[1] for x in c_centers]))
-        # elif len(c_centers) == 1:
-        if len(c_centers) == 1:
+        if len(c_centers) > 1:
+            # Edit PAM I disagree: there is more than 1 center for one color,
+            # the mean represent nothing valuable
+            # c_center = (np.mean([x[0] for x in c_centers]), np.mean([x[1] for x in c_centers]))
+            print(color + ' -> ' + str(len(c_centers)) + ' found')  # , np.floor(centers_dict[color]))
+        elif len(c_centers) == 1:
+            # if len(c_centers) == 1:
             centers_dict[color] = c_centers[0]
-            print(color, centers_dict[color])
+            print(color, np.floor(centers_dict[color]))
 
+    ## Voting logic based on the number of color that were found
     final_center = None
     if len(centers_dict) == 1:
         final_center = next(iter(centers_dict.values()))
@@ -570,8 +590,6 @@ while True:
         y_values = sorted([x[1] for x in centers_dict.values()], reverse=False)
         final_center = (vote(x_values[1], x_values[2], x_values[3]), vote(y_values[1], y_values[2], y_values[3]))
 
-    print('==> final center:', final_center)
-
     # print("  .....   ")
     # print(str([White_rect_center ,Blue_center, Red_center, Yellow_center]))
 
@@ -581,10 +599,16 @@ while True:
 
     # compute the sring output
 
-    cv2.putText(output, alt_str, (20, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 2)
-
     if args["nooutput"]:
+        print(centers + '==> final center:' + final_center)
         print(alt_str + " frame#" + str(Framecounter))
+    else:
+        cv2.putText(output, alt_str, (20, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 2)
+        if not (final_center is None):
+            (startX, endX) = (int(final_center[0] - 30), int(final_center[0] + 30))
+            (startY, endY) = (int(final_center[1] - 30), int(final_center[1] + 30))
+            cv2.line(output, (startX, endY), (endX, startY), (0, 0, 255), 3)
+            cv2.line(output, (startX, startY), (endX, endY), (0, 0, 255), 3)
 
     #########################################################################
 
