@@ -29,6 +29,11 @@
 #
 # V5 2019-05-27
 #		corrects a but (wq not defined) in V4
+#
+# V6 2019-05-30
+#   final center coordinates are send on UDP: 127.0.0.1:9999
+#   message format is 'ff' with a length of 8 Bytes (2 float)
+#
 ###############################################################################
 
 
@@ -37,6 +42,8 @@ import argparse
 # import imutils
 import cv2
 import numpy as np
+import socket
+import struct
 
 # import math
 
@@ -45,6 +52,9 @@ ap = argparse.ArgumentParser()
 ap.add_argument("-v", "--video", help="path to the video file. If not present, will use Webcam(0)")
 ap.add_argument("-n", "--nooutput", help="does not display video, only give stdout ", action='store_true')
 args = vars(ap.parse_args())
+
+UDP_IP = "127.0.0.1"
+UDP_PORT = 9999
 
 # load the video  : if no video arg, open webcam
 if None == args["video"]:
@@ -61,8 +71,7 @@ else:
 # if not(args["nooutput"]):
 #  print("Will display video")
 
-
-## declaration of the Voting logic function.
+# declaration of the Voting logic function.
 def vote(e1, e2, e3):
     if e1 == e2:
         s1 = e1
@@ -116,6 +125,9 @@ boundaries_HSV_Yellow = ([22, 50, 50], [30, 255, 255])  # Yellow
 boundaries_HSV_White = ([0, 0, 220], [180, 50, 255])  # White
 
 Framecounter = 0
+
+# open socket
+sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 
 # keep looping on all frame
 while True:
@@ -187,7 +199,7 @@ while True:
             # print(approx.shape)
             # V0 ; 2018-09-09
             # print( "++")
-            ##print(np.array([approx[0]]).shape)
+            # print(np.array([approx[0]]).shape)
             # print(np.sqrt((approx[0][0][0]-approx[1][0][0])**2 + (approx[0][0][1]-approx[1][0][1])**2))
             # print(np.sqrt((approx[:-2][0][0]-approx[1:][0][0])**2 + (approx[:-2][0][1]-approx[1:][0][1])**2))
             # print( "++")
@@ -611,6 +623,10 @@ while True:
             cv2.line(output, (startX, startY), (endX, endY), (0, 0, 255), 3)
 
     #########################################################################
+
+    # send coordinates on UDP socket
+    if final_center:
+        sock.sendto(struct.pack('ff', final_center[0], final_center[1]), (UDP_IP, UDP_PORT))
 
     # show the frame
     if not (args["nooutput"]):
